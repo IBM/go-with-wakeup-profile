@@ -23,6 +23,7 @@ const (
 	memProfile bucketType = 1 + iota
 	blockProfile
 	mutexProfile
+	wakeupProfile
 
 	// size of bucket hash table
 	buckHashSize = 179999
@@ -456,6 +457,27 @@ func mutexevent(cycles int64, skip int) {
 	if rate > 0 && int64(fastrand())%rate == 0 {
 		saveblockevent(cycles, skip+1, mutexProfile)
 	}
+}
+
+var wakeupprofilerate uint64
+
+// SetWakeupProfileFraction controls the fraction of wake-up events
+// that are reported in the wakeup profile. On average 1/rate events are
+// reported. The previous rate is returned.
+//
+// To turn off profiling entirely, pass rate 0.
+// To just read the current rate, pass rate -1.
+// (For n>1 the details of sampling may change.)
+func SetWakeupProfileFraction(rate int) int {
+	if rate < 0 {
+		return int(wakeupprofilerate)
+	}
+	old := wakeupprofilerate
+	atomic.Store64(&wakeupprofilerate, uint64(rate))
+	return int(old)
+}
+
+func wakeupevent(gp *g, traceskip int) {
 }
 
 // Go interface to profile data.
