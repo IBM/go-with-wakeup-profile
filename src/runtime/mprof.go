@@ -142,6 +142,7 @@ var (
 	mbuckets  *bucket // memory profile buckets
 	bbuckets  *bucket // blocking profile buckets
 	xbuckets  *bucket // mutex profile buckets
+	wbuckets  *bucket // wakeup profile buckets
 	buckhash  *[179999]*bucket
 	bucketmem uintptr
 
@@ -154,6 +155,11 @@ var (
 		// flushed indicates that future[cycle] in all buckets
 		// has been flushed to the active profile.
 		flushed bool
+	}
+
+	wProf struct {
+		// Number of wakeup events. Updated atomically.
+		count uint64
 	}
 )
 
@@ -169,6 +175,7 @@ func newBucket(typ bucketType, nstk int) *bucket {
 		size += unsafe.Sizeof(memRecord{})
 	case blockProfile, mutexProfile:
 		size += unsafe.Sizeof(blockRecord{})
+	case wakeupProfile:
 	}
 
 	b := (*bucket)(persistentalloc(size, 0, &memstats.buckhash_sys))
@@ -250,6 +257,9 @@ func stkbucket(typ bucketType, size uintptr, stk []uintptr, alloc bool) *bucket 
 	} else if typ == mutexProfile {
 		b.allnext = xbuckets
 		xbuckets = b
+	} else if typ == wakeupProfile {
+		b.allnext = wbuckets
+		wbuckets = b
 	} else {
 		b.allnext = bbuckets
 		bbuckets = b
@@ -478,6 +488,25 @@ func SetWakeupProfileFraction(rate int) int {
 }
 
 func wakeupevent(gp *g, traceskip int) {
+	rate := uint64(atomic.Load64(&wakeupprofilerate))
+	if rate == 0 {
+		return
+	}
+	count := atomic.Xadd64(&wProf.count, 1)
+	if count % rate == 0 {
+		savewakeupevent(gp, traceskip+1)
+	}
+}
+
+func savewakeupevent(gpTo *g, traceskip int) {
+	var nstkFrom, nstkTo int
+	var stkFrom, stkTo [maxStack]uintptr
+	nstkFrom = callers(traceskip, stkFrom[:])
+	nstkTo = gcallers(gpTo, 1, stkTo[:])
+	lock(&proflock)
+	_ = stkbucket(wakeupProfile, 0, stkFrom[:nstkFrom], true)
+	_ = stkbucket(wakeupProfile, 0, stkTo[:nstkTo], true)
+	unlock(&proflock)
 }
 
 // Go interface to profile data.

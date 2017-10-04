@@ -294,7 +294,7 @@ func goparkunlock(lock *mutex, reason string, traceEv byte, traceskip int) {
 }
 
 func goready(gp *g, traceskip int) {
-	wakeupevent(gp, traceskip)
+	wakeupevent(gp, traceskip+1)
 	systemstack(func() {
 		ready(gp, traceskip, true)
 	})
