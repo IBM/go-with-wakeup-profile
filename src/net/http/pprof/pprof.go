@@ -234,6 +234,10 @@ func (name handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if name == "heap" && gc > 0 {
 		runtime.GC()
 	}
+	rate, _ := strconv.Atoi(r.FormValue("rate"))
+	if name == "wakeup" && rate > 0 {
+		runtime.SetWakeupProfileFraction(rate)
+	}
 	p.WriteTo(w, debug)
 }
 

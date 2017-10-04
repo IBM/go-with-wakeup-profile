@@ -862,6 +862,32 @@ func Stack(buf []byte, all bool) int {
 	return n
 }
 
+// WakeupProfile returns n, the number of records in the active wakeup profile.
+// If len(p) >= n, WakeupProfile copies the profile into p and returns n, true.
+// If len(p) < n, WakeupProfile does not change p and returns n, false.
+//
+// Most clients should use the runtime/pprof package instead
+// of calling WakeupProfile directly.
+func WakeupProfile(p []StackRecord) (n int, ok bool) {
+	lock(&proflock)
+	for b := wbuckets; b != nil; b = b.allnext {
+		n++
+	}
+	if n <= len(p) {
+		ok = true
+		for b := wbuckets; b != nil; b = b.allnext {
+			r := &p[0]
+			i := copy(r.Stack0[:], b.stk())
+			for ; i < len(r.Stack0); i++ {
+				r.Stack0[i] = 0
+			}
+			p = p[1:]
+		}
+	}
+	unlock(&proflock)
+	return
+}
+
 // Tracing of alloc/free/gc.
 
 var tracelock mutex
