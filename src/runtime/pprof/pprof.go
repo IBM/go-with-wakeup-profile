@@ -103,6 +103,7 @@ import (
 //	threadcreate - stack traces that led to the creation of new OS threads
 //	block        - stack traces that led to blocking on synchronization primitives
 //	mutex        - stack traces of holders of contended mutexes
+//	wakeup       - stack traces of goroutines who wakes another goroutine up
 //
 // These predefined profiles maintain themselves and panic on an explicit
 // Add or Remove method call.
@@ -162,6 +163,12 @@ var mutexProfile = &Profile{
 	write: writeMutex,
 }
 
+var wakeupProfile = &Profile {
+	name: "wakeup",
+	count: countWakeup,
+	write: writeWakeup,
+}
+
 func lockProfiles() {
 	profiles.mu.Lock()
 	if profiles.m == nil {
@@ -172,6 +179,7 @@ func lockProfiles() {
 			"heap":         heapProfile,
 			"block":        blockProfile,
 			"mutex":        mutexProfile,
+			"wakeup":       wakeupProfile,
 		}
 	}
 }
@@ -839,3 +847,46 @@ func writeMutex(w io.Writer, debug int) error {
 }
 
 func runtime_cyclesPerSecond() int64
+
+// countWakeup returns the number of records in the wakeup profile.
+func countWakeup() int {
+	n, _ := runtime.WakeupProfile(nil)
+	return n
+}
+
+// writeWakeup writes the current wakeup profile to w
+func writeWakeup(w io.Writer, debug int) error {
+	var p []runtime.StackRecord
+	n, ok := runtime.WakeupProfile(nil)
+	for {
+		p = make([]runtime.StackRecord, n+50)
+		n, ok = runtime.WakeupProfile(p)
+		if ok {
+			p = p[:n]
+			break
+		}
+	}
+	b := bufio.NewWriter(w)
+	var tw *tabwriter.Writer
+	w = b
+	if debug > 0 {
+		tw = tabwriter.NewWriter(w, 1, 8, 1, '\t', 0)
+		w = tw
+	}
+	fmt.Fprintf(w, "---wakeup:\n")
+	fmt.Fprintf(w, "sampling period=%d\n", runtime.SetWakeupProfileFraction(-1))
+	for i := range p {
+		r := &p[i]
+		for _, pc := range r.Stack() {
+			fmt.Fprintf(w, " %#x", pc)
+		}
+		fmt.Fprint(w, "\n")
+		if debug > 0 {
+			printStackRecord(w, r.Stack(), true)
+		}
+	}
+	if tw != nil {
+		tw.Flush()
+	}
+	return b.Flush()
+}
