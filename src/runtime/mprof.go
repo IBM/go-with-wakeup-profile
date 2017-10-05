@@ -501,8 +501,13 @@ func wakeupevent(gp *g, traceskip int) {
 func savewakeupevent(gpTo *g, traceskip int) {
 	var nstkFrom, nstkTo int
 	var stkFrom, stkTo [maxStack]uintptr
-	nstkFrom = callers(traceskip, stkFrom[:])
-	nstkTo = gcallers(gpTo, 1, stkTo[:])
+	gp := getg()
+	if gp.m.curg == nil || gp.m.curg == gp {
+		nstkFrom = callers(traceskip, stkFrom[:])
+	} else {
+		nstkFrom = gcallers(gp.m.curg, traceskip, stkFrom[:])
+	}
+	nstkTo = gcallers(gpTo, 0, stkTo[:])
 	lock(&proflock)
 	_ = stkbucket(wakeupProfile, 0, stkFrom[:nstkFrom], true)
 	_ = stkbucket(wakeupProfile, 0, stkTo[:nstkTo], true)
