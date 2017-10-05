@@ -877,6 +877,11 @@ func writeWakeup(w io.Writer, debug int) error {
 	fmt.Fprintf(w, "sampling period=%d\n", runtime.SetWakeupProfileFraction(-1))
 	for i := range p {
 		r := &p[i]
+		if i % 2 == 0 {
+			fmt.Fprintf(w, "From")
+		} else {
+			fmt.Fprintf(w, "To")
+		}
 		for _, pc := range r.Stack() {
 			fmt.Fprintf(w, " %#x", pc)
 		}
