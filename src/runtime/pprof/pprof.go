@@ -856,16 +856,21 @@ func countWakeup() int {
 
 // writeWakeup writes the current wakeup profile to w
 func writeWakeup(w io.Writer, debug int) error {
-	var p []runtime.StackRecord
+	var p []runtime.BlockProfileRecord
 	n, ok := runtime.WakeupProfile(nil)
 	for {
-		p = make([]runtime.StackRecord, n+50)
+		p = make([]runtime.BlockProfileRecord, n+50)
 		n, ok = runtime.WakeupProfile(p)
 		if ok {
 			p = p[:n]
 			break
 		}
 	}
+
+	sort.Slice(p, func(i, j int) bool {
+			return p[i].Cycles < p[j].Cycles || (p[i].Cycles == p[j].Cycles && p[i].Count < p[j].Count)
+			})
+
 	b := bufio.NewWriter(w)
 	var tw *tabwriter.Writer
 	w = b
@@ -875,13 +880,23 @@ func writeWakeup(w io.Writer, debug int) error {
 	}
 	fmt.Fprintf(w, "---wakeup:\n")
 	fmt.Fprintf(w, "sampling period=%d\n", runtime.SetWakeupProfileFraction(-1))
+	numEvents := 0
+	eventIndex := make(map[int64]int, 0)
 	for i := range p {
 		r := &p[i]
-		if i % 2 == 0 {
-			fmt.Fprintf(w, "From")
-		} else {
-			fmt.Fprintf(w, "To")
+		if _, exists := eventIndex[r.Cycles]; !exists {
+			eventIndex[r.Cycles] = numEvents
+			numEvents++
 		}
+		index := eventIndex[r.Cycles]
+		typ := "unknown"
+		switch r.Count {
+		  case 0:
+			typ = "from"
+		  case 1:
+			typ = "to"
+		}
+		fmt.Fprintf(w, "%d %s @", index, typ)
 		for _, pc := range r.Stack() {
 			fmt.Fprintf(w, " %#x", pc)
 		}
