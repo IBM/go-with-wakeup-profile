@@ -284,7 +284,7 @@ func goparkunlock(lock *mutex, reason string, traceEv byte, traceskip int) {
 }
 
 func goready(gp *g, traceskip int) {
-	wakeupevent(gp)
+	wakeupevent(gp, 3)
 	systemstack(func() {
 		ready(gp, traceskip, true)
 	})
@@ -3023,6 +3023,7 @@ func newproc1(fn *funcval, argp *uint8, narg int32, nret int32, callerpc uintptr
 	if trace.enabled {
 		traceGoCreate(newg, newg.startpc)
 	}
+	wakeupevent(newg, 1)
 	runqput(_p_, newg, true)
 
 	if atomic.Load(&sched.npidle) != 0 && atomic.Load(&sched.nmspinning) == 0 && runtimeInitTime != 0 {
