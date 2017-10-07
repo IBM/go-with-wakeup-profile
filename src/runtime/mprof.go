@@ -486,25 +486,25 @@ func SetWakeupProfileFraction(rate int) int {
 	return int(old)
 }
 
-func wakeupevent(gp *g) {
+func wakeupevent(gp *g, skip int) {
 	rate := uint64(atomic.Load64(&wakeupprofilerate))
 	if rate == 0 {
 		return
 	}
 	count := atomic.Xadd64(&wProf.count, 1)
 	if count % rate == 0 {
-		savewakeupevent(gp)
+		savewakeupevent(gp, skip)
 	}
 }
 
-func savewakeupevent(gpTo *g) {
+func savewakeupevent(gpTo *g, skip int) {
 	var nstkFrom, nstkTo int
 	var stkFrom, stkTo [maxStack]uintptr
 	gpFrom := getg()
 	if gpFrom.m.curg == nil || gpFrom.m.curg == gpFrom {
-		nstkFrom = callers(3, stkFrom[:])
+		nstkFrom = callers(skip, stkFrom[:])
 	} else {
-		nstkFrom = gcallers(gpFrom.m.curg, 3, stkFrom[:])
+		nstkFrom = gcallers(gpFrom.m.curg, skip, stkFrom[:])
 	}
 	nstkTo = gcallers(gpTo, 0, stkTo[:])
 	cycles := cputicks()
