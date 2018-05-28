@@ -23,6 +23,7 @@ const (
 	memProfile bucketType = 1 + iota
 	blockProfile
 	mutexProfile
+	wakeupProfile
 
 	// size of bucket hash table
 	buckHashSize = 179999
@@ -141,6 +142,7 @@ var (
 	mbuckets  *bucket // memory profile buckets
 	bbuckets  *bucket // blocking profile buckets
 	xbuckets  *bucket // mutex profile buckets
+	wbuckets  *bucket // wakeup profile buckets
 	buckhash  *[179999]*bucket
 	bucketmem uintptr
 
@@ -154,6 +156,11 @@ var (
 		// has been flushed to the active profile.
 		flushed bool
 	}
+
+	wProf struct {
+		// Number of wakeup events. Updated atomically.
+		count uint64
+	}
 )
 
 const mProfCycleWrap = uint32(len(memRecord{}.future)) * (2 << 24)
@@ -166,7 +173,7 @@ func newBucket(typ bucketType, nstk int) *bucket {
 		throw("invalid profile bucket type")
 	case memProfile:
 		size += unsafe.Sizeof(memRecord{})
-	case blockProfile, mutexProfile:
+	case blockProfile, mutexProfile, wakeupProfile:
 		size += unsafe.Sizeof(blockRecord{})
 	}
 
@@ -194,7 +201,7 @@ func (b *bucket) mp() *memRecord {
 
 // bp returns the blockRecord associated with the blockProfile bucket b.
 func (b *bucket) bp() *blockRecord {
-	if b.typ != blockProfile && b.typ != mutexProfile {
+	if b.typ != blockProfile && b.typ != mutexProfile && b.typ != wakeupProfile {
 		throw("bad use of bucket.bp")
 	}
 	data := add(unsafe.Pointer(b), unsafe.Sizeof(*b)+b.nstk*unsafe.Sizeof(uintptr(0)))
@@ -249,6 +256,9 @@ func stkbucket(typ bucketType, size uintptr, stk []uintptr, alloc bool) *bucket 
 	} else if typ == mutexProfile {
 		b.allnext = xbuckets
 		xbuckets = b
+	} else if typ == wakeupProfile {
+		b.allnext = wbuckets
+		wbuckets = b
 	} else {
 		b.allnext = bbuckets
 		bbuckets = b
@@ -456,6 +466,58 @@ func mutexevent(cycles int64, skip int) {
 	if rate > 0 && int64(fastrand())%rate == 0 {
 		saveblockevent(cycles, skip+1, mutexProfile)
 	}
+}
+
+var wakeupprofilerate uint64
+
+// SetWakeupProfileFraction controls the fraction of wake-up events
+// that are reported in the wakeup profile. On average 1/rate events are
+// reported. The previous rate is returned.
+//
+// To turn off profiling entirely, pass rate 0.
+// To just read the current rate, pass rate -1.
+// (For n>1 the details of sampling may change.)
+func SetWakeupProfileFraction(rate int) int {
+	if rate < 0 {
+		return int(wakeupprofilerate)
+	}
+	old := wakeupprofilerate
+	atomic.Store64(&wakeupprofilerate, uint64(rate))
+	return int(old)
+}
+
+func wakeupevent(gp *g, skip int) {
+	rate := uint64(atomic.Load64(&wakeupprofilerate))
+	if rate == 0 {
+		return
+	}
+	count := atomic.Xadd64(&wProf.count, 1)
+	if count % rate == 0 {
+		savewakeupevent(gp, skip)
+	}
+}
+
+func savewakeupevent(gpTo *g, skip int) {
+	var nstkFrom, nstkTo int
+	var stkFrom, stkTo [maxStack]uintptr
+	gpFrom := getg()
+	if gpFrom.m.curg == nil || gpFrom.m.curg == gpFrom {
+		nstkFrom = callers(skip, stkFrom[:])
+	} else {
+		nstkFrom = gcallers(gpFrom.m.curg, skip, stkFrom[:])
+	}
+	nstkTo = gcallers(gpTo, 0, stkTo[:])
+	cycles := cputicks()
+	lock(&proflock)
+	b := stkbucket(wakeupProfile, 0, stkFrom[:nstkFrom], true)
+	bp := b.bp()
+	bp.cycles = cycles
+	bp.count = 0
+	b = stkbucket(wakeupProfile, 0, stkTo[:nstkTo], true)
+	bp = b.bp()
+	bp.cycles = cycles
+	bp.count = 1
+	unlock(&proflock)
 }
 
 // Go interface to profile data.
@@ -809,6 +871,35 @@ func Stack(buf []byte, all bool) int {
 		startTheWorld()
 	}
 	return n
+}
+
+// WakeupProfile returns n, the number of records in the active wakeup profile.
+// If len(p) >= n, WakeupProfile copies the profile into p and returns n, true.
+// If len(p) < n, WakeupProfile does not change p and returns n, false.
+//
+// Most clients should use the runtime/pprof package instead
+// of calling WakeupProfile directly.
+func WakeupProfile(p []BlockProfileRecord) (n int, ok bool) {
+	lock(&proflock)
+	for b := wbuckets; b != nil; b = b.allnext {
+		n++
+	}
+	if n <= len(p) {
+		ok = true
+		for b := wbuckets; b != nil; b = b.allnext {
+			bp := b.bp()
+			r := &p[0]
+			r.Count = int64(bp.count)
+			r.Cycles = bp.cycles
+			i := copy(r.Stack0[:], b.stk())
+			for ; i < len(r.Stack0); i++ {
+				r.Stack0[i] = 0
+			}
+			p = p[1:]
+		}
+	}
+	unlock(&proflock)
+	return
 }
 
 // Tracing of alloc/free/gc.
