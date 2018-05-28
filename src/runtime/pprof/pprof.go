@@ -103,6 +103,7 @@ import (
 //	threadcreate - stack traces that led to the creation of new OS threads
 //	block        - stack traces that led to blocking on synchronization primitives
 //	mutex        - stack traces of holders of contended mutexes
+//	wakeup       - stack traces of goroutines who wakes another goroutine up
 //
 // These predefined profiles maintain themselves and panic on an explicit
 // Add or Remove method call.
@@ -162,6 +163,12 @@ var mutexProfile = &Profile{
 	write: writeMutex,
 }
 
+var wakeupProfile = &Profile {
+	name: "wakeup",
+	count: countWakeup,
+	write: writeWakeup,
+}
+
 func lockProfiles() {
 	profiles.mu.Lock()
 	if profiles.m == nil {
@@ -172,6 +179,7 @@ func lockProfiles() {
 			"heap":         heapProfile,
 			"block":        blockProfile,
 			"mutex":        mutexProfile,
+			"wakeup":       wakeupProfile,
 		}
 	}
 }
@@ -894,3 +902,66 @@ func scaleMutexProfile(cnt int64, ns float64) (int64, float64) {
 }
 
 func runtime_cyclesPerSecond() int64
+
+// countWakeup returns the number of records in the wakeup profile.
+func countWakeup() int {
+	n, _ := runtime.WakeupProfile(nil)
+	return n
+}
+
+// writeWakeup writes the current wakeup profile to w
+func writeWakeup(w io.Writer, debug int) error {
+	var p []runtime.BlockProfileRecord
+	n, ok := runtime.WakeupProfile(nil)
+	for {
+		p = make([]runtime.BlockProfileRecord, n+50)
+		n, ok = runtime.WakeupProfile(p)
+		if ok {
+			p = p[:n]
+			break
+		}
+	}
+
+	sort.Slice(p, func(i, j int) bool {
+			return p[i].Cycles < p[j].Cycles || (p[i].Cycles == p[j].Cycles && p[i].Count < p[j].Count)
+			})
+
+	b := bufio.NewWriter(w)
+	var tw *tabwriter.Writer
+	w = b
+	if debug > 0 {
+		tw = tabwriter.NewWriter(w, 1, 8, 1, '\t', 0)
+		w = tw
+	}
+	fmt.Fprintf(w, "---wakeup:\n")
+	fmt.Fprintf(w, "sampling period=%d\n", runtime.SetWakeupProfileFraction(-1))
+	numEvents := 0
+	eventIndex := make(map[int64]int, 0)
+	for i := range p {
+		r := &p[i]
+		if _, exists := eventIndex[r.Cycles]; !exists {
+			eventIndex[r.Cycles] = numEvents
+			numEvents++
+		}
+		index := eventIndex[r.Cycles]
+		typ := "unknown"
+		switch r.Count {
+		  case 0:
+			typ = "from"
+		  case 1:
+			typ = "to"
+		}
+		fmt.Fprintf(w, "%d %s @", index, typ)
+		for _, pc := range r.Stack() {
+			fmt.Fprintf(w, " %#x", pc)
+		}
+		fmt.Fprint(w, "\n")
+		if debug > 0 {
+			printStackRecord(w, r.Stack(), true)
+		}
+	}
+	if tw != nil {
+		tw.Flush()
+	}
+	return b.Flush()
+}
