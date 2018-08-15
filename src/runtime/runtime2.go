@@ -443,7 +443,7 @@ type m struct {
 	schedlink     muintptr
 	mcache        *mcache
 	lockedg       guintptr
-	createstack   [32]uintptr    // stack that created this thread.
+	createstack   [64]uintptr    // stack that created this thread.
 	freglo        [16]uint32     // d[i] lsb and f[i]
 	freghi        [16]uint32     // d[i] msb and f[i+16]
 	fflag         uint32         // floating point compare flags
