@@ -1,0 +1,9 @@
+{
+  "addresses": [
+  ],
+  "paths": {
+    "pprof": "/debug/pprof/goroutine?debug=2",
+    "wakeup": "/debug/pprof/wakeup?debug=2&rate=1000",
+    "block": "/debug/pprof/block?debug=1"
+  }
+}
