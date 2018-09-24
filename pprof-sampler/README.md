@@ -4,7 +4,7 @@ This README explains how to collect pprof profiles from Go applications built by
 
 ## How to configure a sampler
 
-Copy [config.json](/config.json) locally and edit it. List a pair of the IP address and port for all target Go processes under `addresses` tag. `pprof`, `wakeup`, and `block` under `paths` tag enable the standard pprof, the wakeup profile, and the block profile, respectively. `rate=1000` indicates the sampling rate of the wakeup profile. Note that the block profile is collected after the application calls runtime.SetBlockProfileRate. Thus, typically the application needs to be modifed to collect the block profile.
+Copy [config.json](/config.json) locally and edit it. List a pair of the IP address and port for all target Go processes under `addresses` tag. `pprof`, `wakeup`, and `block` under `paths` tag enable the standard pprof, the wakeup profile, and the block profile, respectively. `rate=1000` indicates the sampling rate of the wakeup profile. For detecting performance bottlenecks, the pprof and wakeup profiles need to be enabled but the block profile is optional, which can be used to monitor delay statistics due to blocked threads in real-time. Note that the block profile is collected after the application calls runtime.SetBlockProfileRate. Thus, typically the application needs to be modified to call the method for collecting the block profile.
 
 ```
 {
