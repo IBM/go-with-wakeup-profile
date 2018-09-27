@@ -80,6 +80,7 @@ func readyWithTime(s *sudog, traceskip int) {
 	if s.releasetime != 0 {
 		s.releasetime = cputicks()
 	}
+	wakeupevent(s.releasetime-s.acquiretime, s.g, 3)
 	goready(s.g, traceskip)
 }
 

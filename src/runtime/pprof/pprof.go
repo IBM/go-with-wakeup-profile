@@ -425,7 +425,7 @@ func printCountProfile(w io.Writer, debug int, name string, p countProfile) erro
 		fmt.Fprintf(tw, "%s profile: total %d\n", name, p.Len())
 		for _, k := range keys {
 			fmt.Fprintf(tw, "%d %s\n", count[k], k)
-			printStackRecord(tw, p.Stack(index[k]), false)
+			printStackRecordLn(tw, p.Stack(index[k]), false)
 		}
 		return tw.Flush()
 	}
@@ -473,6 +473,10 @@ func (x *keysByCount) Less(i, j int) bool {
 	return ki < kj
 }
 
+func printStackRecordLn(w io.Writer, stk []uintptr, allFrames bool) {
+	printStackRecord(w, stk, allFrames)
+	fmt.Fprintf(w, "\n")
+}
 // printStackRecord prints the function + source line information
 // for a single stack trace.
 func printStackRecord(w io.Writer, stk []uintptr, allFrames bool) {
@@ -500,7 +504,6 @@ func printStackRecord(w io.Writer, stk []uintptr, allFrames bool) {
 		printStackRecord(w, stk, true)
 		return
 	}
-	fmt.Fprintf(w, "\n")
 }
 
 // Interface to system profiles.
@@ -584,7 +587,7 @@ func writeHeap(w io.Writer, debug int) error {
 			fmt.Fprintf(w, " %#x", pc)
 		}
 		fmt.Fprintf(w, "\n")
-		printStackRecord(w, r.Stack(), false)
+		printStackRecordLn(w, r.Stack(), false)
 	}
 
 	// Print memstats information too.
@@ -833,7 +836,7 @@ func writeBlock(w io.Writer, debug int) error {
 		}
 		fmt.Fprint(w, "\n")
 		if debug > 0 {
-			printStackRecord(w, r.Stack(), true)
+			printStackRecordLn(w, r.Stack(), true)
 		}
 	}
 
@@ -886,7 +889,7 @@ func writeMutex(w io.Writer, debug int) error {
 		}
 		fmt.Fprint(w, "\n")
 		if debug > 0 {
-			printStackRecord(w, r.Stack(), true)
+			printStackRecordLn(w, r.Stack(), true)
 		}
 	}
 
@@ -911,10 +914,10 @@ func countWakeup() int {
 
 // writeWakeup writes the current wakeup profile to w
 func writeWakeup(w io.Writer, debug int) error {
-	var p []runtime.BlockProfileRecord
+	var p []runtime.WakeupProfileRecord
 	n, ok := runtime.WakeupProfile(nil)
 	for {
-		p = make([]runtime.BlockProfileRecord, n+50)
+		p = make([]runtime.WakeupProfileRecord, n+50)
 		n, ok = runtime.WakeupProfile(p)
 		if ok {
 			p = p[:n]
@@ -935,33 +938,48 @@ func writeWakeup(w io.Writer, debug int) error {
 	}
 	fmt.Fprintf(w, "---wakeup:\n")
 	fmt.Fprintf(w, "sampling period=%d\n", runtime.SetWakeupProfileFraction(-1))
-	numEvents := 0
-	eventIndex := make(map[int64]int, 0)
 	for i := range p {
 		r := &p[i]
-		if _, exists := eventIndex[r.Cycles]; !exists {
-			eventIndex[r.Cycles] = numEvents
-			numEvents++
-		}
-		index := eventIndex[r.Cycles]
-		typ := "unknown"
-		switch r.Count {
-		  case 0:
-			typ = "from"
-		  case 1:
-			typ = "to"
-		}
-		fmt.Fprintf(w, "%d %s @", index, typ)
-		for _, pc := range r.Stack() {
+		fmt.Fprintf(w, "%v %v @", r.Cycles, r.Count)
+		for _, pc := range r.Waiter.Stack() {
 			fmt.Fprintf(w, " %#x", pc)
+		}
+		if r.Waiter.Creator != 0 {
+			fmt.Fprintf(w, " %#x", r.Waiter.Creator)
+		}
+		for _, pc := range r.Notifier.Stack() {
+			fmt.Fprintf(w, " %#x", pc)
+		}
+		if r.Notifier.Creator != 0 {
+			fmt.Fprintf(w, " %#x", r.Notifier.Creator)
 		}
 		fmt.Fprint(w, "\n")
 		if debug > 0 {
-			printStackRecord(w, r.Stack(), true)
+			fmt.Fprintf(w, "# Waiter\n")
+			printStackRecordWithCreator(w, r.Waiter)
+			fmt.Fprintf(w, "#\n")
+			fmt.Fprintf(w, "# Notifier\n")
+			printStackRecordWithCreator(w, r.Notifier)
+			fmt.Fprintf(w, "#\n")
 		}
 	}
 	if tw != nil {
 		tw.Flush()
 	}
 	return b.Flush()
+}
+
+func printStackRecordWithCreator(w io.Writer, stk runtime.StackRecordWithCreator) {
+	printStackRecord(w, stk.Stack(), true)
+	if stk.Creator == 0 {
+		return
+	}
+	frame, _ := runtime.CallersFrames([]uintptr{ stk.Creator }).Next()
+	fmt.Fprintf(w, "# created by ")
+	name := frame.Function
+	if name == "" {
+		fmt.Fprintf(w, "\t%#x\n", frame.PC)
+	} else {
+		fmt.Fprintf(w, "\t%#x\t%s+%#x\t%s:%d\n", frame.PC, name, frame.PC-frame.Entry, frame.File, frame.Line)
+	}
 }
