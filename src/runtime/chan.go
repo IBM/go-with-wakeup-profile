@@ -289,6 +289,7 @@ func send(c *hchan, sg *sudog, ep unsafe.Pointer, unlockf func(), skip int) {
 	if sg.releasetime != 0 {
 		sg.releasetime = cputicks()
 	}
+	wakeupevent(sg.releasetime-sg.acquiretime, gp, 3)
 	goready(gp, skip+1)
 }
 
@@ -363,6 +364,7 @@ func closechan(c *hchan) {
 		}
 		gp.schedlink.set(glist)
 		glist = gp
+		wakeupevent(sg.releasetime-sg.acquiretime, gp, 3)
 	}
 
 	// release all writers (they will panic)
@@ -382,6 +384,7 @@ func closechan(c *hchan) {
 		}
 		gp.schedlink.set(glist)
 		glist = gp
+		wakeupevent(sg.releasetime-sg.acquiretime, gp, 3)
 	}
 	unlock(&c.lock)
 
@@ -585,6 +588,7 @@ func recv(c *hchan, sg *sudog, ep unsafe.Pointer, unlockf func(), skip int) {
 	if sg.releasetime != 0 {
 		sg.releasetime = cputicks()
 	}
+	wakeupevent(sg.releasetime-sg.acquiretime, gp, 3)
 	goready(gp, skip+1)
 }
 

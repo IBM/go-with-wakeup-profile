@@ -29,7 +29,7 @@ const (
 	buckHashSize = 179999
 
 	// max depth of stack to record in bucket
-	maxStack = 64
+	maxStack = 130
 )
 
 type bucketType int
@@ -138,6 +138,13 @@ type blockRecord struct {
 	cycles int64
 }
 
+// A wakeupRecord is the bucket data for a bucket of type wakeupProfile,
+// which is used in wake-up profiles.
+type wakeupRecord struct {
+	blockRecord
+	nstkFrom, nstkTo int
+}
+
 var (
 	mbuckets  *bucket // memory profile buckets
 	bbuckets  *bucket // blocking profile buckets
@@ -173,8 +180,10 @@ func newBucket(typ bucketType, nstk int) *bucket {
 		throw("invalid profile bucket type")
 	case memProfile:
 		size += unsafe.Sizeof(memRecord{})
-	case blockProfile, mutexProfile, wakeupProfile:
+	case blockProfile, mutexProfile:
 		size += unsafe.Sizeof(blockRecord{})
+	case wakeupProfile:
+		size += unsafe.Sizeof(wakeupRecord{})
 	}
 
 	b := (*bucket)(persistentalloc(size, 0, &memstats.buckhash_sys))
@@ -201,11 +210,20 @@ func (b *bucket) mp() *memRecord {
 
 // bp returns the blockRecord associated with the blockProfile bucket b.
 func (b *bucket) bp() *blockRecord {
-	if b.typ != blockProfile && b.typ != mutexProfile && b.typ != wakeupProfile {
+	if b.typ != blockProfile && b.typ != mutexProfile {
 		throw("bad use of bucket.bp")
 	}
 	data := add(unsafe.Pointer(b), unsafe.Sizeof(*b)+b.nstk*unsafe.Sizeof(uintptr(0)))
 	return (*blockRecord)(data)
+}
+
+// wp returns the wakeupRecord associated with the wakeupProfile bucket b.
+func (b *bucket) wp() *wakeupRecord {
+	if b.typ != wakeupProfile {
+		throw("bad use of bucket.bp")
+	}
+	data := add(unsafe.Pointer(b), unsafe.Sizeof(*b)+b.nstk*unsafe.Sizeof(uintptr(0)))
+	return (*wakeupRecord)(data)
 }
 
 // Return the bucket for stk[0:nstk], allocating new bucket if needed.
@@ -486,37 +504,43 @@ func SetWakeupProfileFraction(rate int) int {
 	return int(old)
 }
 
-func wakeupevent(gp *g, skip int) {
+func wakeupevent(cycles int64, gp *g, skip int) {
 	rate := uint64(atomic.Load64(&wakeupprofilerate))
 	if rate == 0 {
 		return
 	}
 	count := atomic.Xadd64(&wProf.count, 1)
 	if count % rate == 0 {
-		savewakeupevent(gp, skip)
+		savewakeupevent(cycles, gp, skip)
 	}
 }
 
-func savewakeupevent(gpTo *g, skip int) {
+func savewakeupevent(cycles int64, gpTo *g, skip int) {
 	var nstkFrom, nstkTo int
 	var stkFrom, stkTo [maxStack]uintptr
+	var crtFrom, crtTo uintptr
+	var stkAll []uintptr
 	gpFrom := getg()
 	if gpFrom.m.curg == nil || gpFrom.m.curg == gpFrom {
 		nstkFrom = callers(skip, stkFrom[:])
+		crtFrom = getg().gopc
 	} else {
 		nstkFrom = gcallers(gpFrom.m.curg, skip, stkFrom[:])
+		crtFrom = gpFrom.m.curg.gopc
 	}
 	nstkTo = gcallers(gpTo, 0, stkTo[:])
-	cycles := cputicks()
+	crtTo = gpTo.gopc
+	stkAll = append(stkAll, stkFrom[:nstkFrom]...)
+	stkAll = append(stkAll, crtFrom)
+	stkAll = append(stkAll, stkTo[:nstkTo]...)
+	stkAll = append(stkAll, crtTo)
 	lock(&proflock)
-	b := stkbucket(wakeupProfile, 0, stkFrom[:nstkFrom], true)
-	bp := b.bp()
-	bp.cycles = cycles
-	bp.count = 0
-	b = stkbucket(wakeupProfile, 0, stkTo[:nstkTo], true)
-	bp = b.bp()
-	bp.cycles = cycles
-	bp.count = 1
+	b := stkbucket(wakeupProfile, 0, stkAll[:nstkFrom+nstkTo+2], true)
+	wp := b.wp()
+	wp.cycles += cycles
+	wp.count++
+	wp.nstkFrom = nstkFrom
+	wp.nstkTo = nstkTo
 	unlock(&proflock)
 }
 
@@ -873,13 +897,30 @@ func Stack(buf []byte, all bool) int {
 	return n
 }
 
+// WakeupProfileRecord describes call sequences of a notifier and a waiter
+// goroutines, which the waiter has been blocked and the notifier wakes up
+// the waiter.
+type WakeupProfileRecord struct {
+	Count    int64
+	Cycles   int64
+	Waiter   StackRecordWithCreator
+	Notifier StackRecordWithCreator
+}
+
+// StackRecordWithCreator is a stack trace with an additional creation site
+// of the goroutine.
+type StackRecordWithCreator struct {
+	StackRecord
+	Creator uintptr
+}
+
 // WakeupProfile returns n, the number of records in the active wakeup profile.
 // If len(p) >= n, WakeupProfile copies the profile into p and returns n, true.
 // If len(p) < n, WakeupProfile does not change p and returns n, false.
 //
 // Most clients should use the runtime/pprof package instead
 // of calling WakeupProfile directly.
-func WakeupProfile(p []BlockProfileRecord) (n int, ok bool) {
+func WakeupProfile(p []WakeupProfileRecord) (n int, ok bool) {
 	lock(&proflock)
 	for b := wbuckets; b != nil; b = b.allnext {
 		n++
@@ -887,14 +928,24 @@ func WakeupProfile(p []BlockProfileRecord) (n int, ok bool) {
 	if n <= len(p) {
 		ok = true
 		for b := wbuckets; b != nil; b = b.allnext {
-			bp := b.bp()
+			wp := b.wp()
 			r := &p[0]
-			r.Count = int64(bp.count)
-			r.Cycles = bp.cycles
-			i := copy(r.Stack0[:], b.stk())
-			for ; i < len(r.Stack0); i++ {
-				r.Stack0[i] = 0
+			r.Count = int64(wp.count)
+			r.Cycles = wp.cycles
+			start := 0
+			i := copy(r.Waiter.Stack0[:], b.stk()[start:start+wp.nstkFrom])
+			for ; i < len(r.Waiter.Stack0); i++ {
+				r.Waiter.Stack0[i] = 0
 			}
+			start += wp.nstkFrom
+			r.Waiter.Creator = b.stk()[start]
+			start += 1
+			j := copy(r.Notifier.Stack0[:], b.stk()[start:start+wp.nstkTo])
+			for ; j < len(r.Notifier.Stack0); j++ {
+				r.Notifier.Stack0[j] = 0
+			}
+			start += wp.nstkTo
+			r.Notifier.Creator = b.stk()[start]
 			p = p[1:]
 		}
 	}

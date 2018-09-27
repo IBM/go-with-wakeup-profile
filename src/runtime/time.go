@@ -122,6 +122,7 @@ func stopTimer(t *timer) bool {
 
 // Ready the goroutine arg.
 func goroutineReady(arg interface{}, seq uintptr) {
+	wakeupevent(0, arg.(*g), 3)
 	goready(arg.(*g), 0)
 }
 
@@ -152,6 +153,7 @@ func (tb *timersBucket) addtimerLocked(t *timer) {
 		}
 		if tb.rescheduling {
 			tb.rescheduling = false
+			wakeupevent(0, tb.gp, 3)
 			goready(tb.gp, 0)
 		}
 	}
