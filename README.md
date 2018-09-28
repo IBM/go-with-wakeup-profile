@@ -17,7 +17,7 @@ $ docker build -t go-wakeup git@github.com:IBM/go-with-wakeup-profile#wakeup-pro
 
 2. Run the container
 ```
-docker run --rm go-wakeup > go-1.10-wakeup.tar.gz
+$ docker run --rm go-wakeup > go-1.10-wakeup.tar.gz
 ```
 
 3. Make sure you get a golang with wakeup profile
