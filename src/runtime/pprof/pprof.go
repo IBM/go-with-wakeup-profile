@@ -926,7 +926,7 @@ func writeWakeup(w io.Writer, debug int) error {
 	}
 
 	sort.Slice(p, func(i, j int) bool {
-			return p[i].Cycles < p[j].Cycles || (p[i].Cycles == p[j].Cycles && p[i].Count < p[j].Count)
+			return p[i].Cycles > p[j].Cycles || (p[i].Cycles == p[j].Cycles && p[i].Count > p[j].Count)
 			})
 
 	b := bufio.NewWriter(w)
@@ -957,10 +957,10 @@ func writeWakeup(w io.Writer, debug int) error {
 		if debug > 0 {
 			fmt.Fprintf(w, "# Waiter\n")
 			printStackRecordWithCreator(w, r.Waiter)
-			fmt.Fprintf(w, "#\n")
+			fmt.Fprintf(w, "\n")
 			fmt.Fprintf(w, "# Notifier\n")
 			printStackRecordWithCreator(w, r.Notifier)
-			fmt.Fprintf(w, "#\n")
+			fmt.Fprintf(w, "\n")
 		}
 	}
 	if tw != nil {

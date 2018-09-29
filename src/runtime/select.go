@@ -210,12 +210,15 @@ func selectgo(sel *hselect) int {
 	scaseslice := slice{unsafe.Pointer(&sel.scase), int(sel.ncase), int(sel.ncase)}
 	scases := *(*[]scase)(unsafe.Pointer(&scaseslice))
 
-	var t0 int64
+	var t0, blocktime int64
 	if blockprofilerate > 0 {
 		t0 = cputicks()
 		for i := 0; i < int(sel.ncase); i++ {
 			scases[i].releasetime = -1
 		}
+	}
+	if wakeupprofilerate > 0 {
+		blocktime = cputicks()
 	}
 
 	// The compiler rewrites selects that statically have
@@ -372,6 +375,9 @@ loop:
 		sg.releasetime = 0
 		if t0 != 0 {
 			sg.releasetime = -1
+		}
+		if blocktime != 0 {
+			sg.blocktime = blocktime
 		}
 		sg.c = c
 		// Construct waiting list in lock order.

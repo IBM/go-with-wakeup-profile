@@ -303,6 +303,7 @@ type sudog struct {
 
 	acquiretime int64
 	releasetime int64
+	blocktime   int64
 	ticket      uint32
 	parent      *sudog // semaRoot binary tree
 	waitlink    *sudog // g.waiting list or semaRoot

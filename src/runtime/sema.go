@@ -80,7 +80,7 @@ func readyWithTime(s *sudog, traceskip int) {
 	if s.releasetime != 0 {
 		s.releasetime = cputicks()
 	}
-	wakeupevent(s.releasetime-s.acquiretime, s.g, 3)
+	wakeupevent(s.blocktime, s.g, 2)
 	goready(s.g, traceskip)
 }
 
@@ -118,6 +118,7 @@ func semacquire1(addr *uint32, lifo bool, profile semaProfileFlags) {
 	t0 := int64(0)
 	s.releasetime = 0
 	s.acquiretime = 0
+	s.blocktime = 0
 	s.ticket = 0
 	if profile&semaBlockProfile != 0 && blockprofilerate > 0 {
 		t0 = cputicks()
@@ -128,6 +129,9 @@ func semacquire1(addr *uint32, lifo bool, profile semaProfileFlags) {
 			t0 = cputicks()
 		}
 		s.acquiretime = t0
+	}
+	if wakeupprofilerate > 0 {
+		s.blocktime = cputicks()
 	}
 	for {
 		lock(&root.lock)
@@ -497,10 +501,14 @@ func notifyListWait(l *notifyList, t uint32) {
 	s.g = getg()
 	s.ticket = t
 	s.releasetime = 0
+	s.blocktime = 0
 	t0 := int64(0)
 	if blockprofilerate > 0 {
 		t0 = cputicks()
 		s.releasetime = -1
+	}
+	if wakeupprofilerate > 0 {
+		s.blocktime = cputicks()
 	}
 	if l.tail == nil {
 		l.head = s
