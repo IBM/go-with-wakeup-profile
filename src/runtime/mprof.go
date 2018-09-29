@@ -142,7 +142,7 @@ type blockRecord struct {
 // which is used in wake-up profiles.
 type wakeupRecord struct {
 	blockRecord
-	nstkFrom, nstkTo int
+	nstkNotifier, nstkWaiter int
 }
 
 var (
@@ -504,43 +504,47 @@ func SetWakeupProfileFraction(rate int) int {
 	return int(old)
 }
 
-func wakeupevent(cycles int64, gp *g, skip int) {
+func wakeupevent(blocktime int64, gpWaiter *g, skip int) {
 	rate := uint64(atomic.Load64(&wakeupprofilerate))
 	if rate == 0 {
 		return
 	}
 	count := atomic.Xadd64(&wProf.count, 1)
 	if count % rate == 0 {
-		savewakeupevent(cycles, gp, skip)
+		var cycles int64
+		if blocktime > 0 {
+			cycles = cputicks() - blocktime
+		}
+		savewakeupevent(cycles, gpWaiter, skip)
 	}
 }
 
-func savewakeupevent(cycles int64, gpTo *g, skip int) {
-	var nstkFrom, nstkTo int
-	var stkFrom, stkTo [maxStack]uintptr
-	var crtFrom, crtTo uintptr
+func savewakeupevent(cycles int64, gpWaiter *g, skip int) {
+	var nstkNotifier, nstkWaiter int
+	var stkNotifier, stkWaiter [maxStack]uintptr
+	var crtNotifier, crtWaiter uintptr
 	var stkAll []uintptr
-	gpFrom := getg()
-	if gpFrom.m.curg == nil || gpFrom.m.curg == gpFrom {
-		nstkFrom = callers(skip, stkFrom[:])
-		crtFrom = getg().gopc
+	gpNotifier := getg()
+	if gpNotifier.m.curg == nil || gpNotifier.m.curg == gpNotifier {
+		nstkNotifier = callers(skip, stkNotifier[:])
+		crtNotifier = getg().gopc
 	} else {
-		nstkFrom = gcallers(gpFrom.m.curg, skip, stkFrom[:])
-		crtFrom = gpFrom.m.curg.gopc
+		nstkNotifier = gcallers(gpNotifier.m.curg, skip, stkNotifier[:])
+		crtNotifier = gpNotifier.m.curg.gopc
 	}
-	nstkTo = gcallers(gpTo, 0, stkTo[:])
-	crtTo = gpTo.gopc
-	stkAll = append(stkAll, stkFrom[:nstkFrom]...)
-	stkAll = append(stkAll, crtFrom)
-	stkAll = append(stkAll, stkTo[:nstkTo]...)
-	stkAll = append(stkAll, crtTo)
+	nstkWaiter = gcallers(gpWaiter, 0, stkWaiter[:])
+	crtWaiter = gpWaiter.gopc
+	stkAll = append(stkAll, stkNotifier[:nstkNotifier]...)
+	stkAll = append(stkAll, crtNotifier)
+	stkAll = append(stkAll, stkWaiter[:nstkWaiter]...)
+	stkAll = append(stkAll, crtWaiter)
 	lock(&proflock)
-	b := stkbucket(wakeupProfile, 0, stkAll[:nstkFrom+nstkTo+2], true)
+	b := stkbucket(wakeupProfile, 0, stkAll[:nstkNotifier+nstkWaiter+2], true)
 	wp := b.wp()
 	wp.cycles += cycles
 	wp.count++
-	wp.nstkFrom = nstkFrom
-	wp.nstkTo = nstkTo
+	wp.nstkNotifier = nstkNotifier
+	wp.nstkWaiter = nstkWaiter
 	unlock(&proflock)
 }
 
@@ -933,19 +937,19 @@ func WakeupProfile(p []WakeupProfileRecord) (n int, ok bool) {
 			r.Count = int64(wp.count)
 			r.Cycles = wp.cycles
 			start := 0
-			i := copy(r.Waiter.Stack0[:], b.stk()[start:start+wp.nstkFrom])
-			for ; i < len(r.Waiter.Stack0); i++ {
-				r.Waiter.Stack0[i] = 0
+			i := copy(r.Notifier.Stack0[:], b.stk()[start:start+wp.nstkNotifier])
+			for ; i < len(r.Notifier.Stack0); i++ {
+				r.Notifier.Stack0[i] = 0
 			}
-			start += wp.nstkFrom
-			r.Waiter.Creator = b.stk()[start]
-			start += 1
-			j := copy(r.Notifier.Stack0[:], b.stk()[start:start+wp.nstkTo])
-			for ; j < len(r.Notifier.Stack0); j++ {
-				r.Notifier.Stack0[j] = 0
-			}
-			start += wp.nstkTo
+			start += wp.nstkNotifier
 			r.Notifier.Creator = b.stk()[start]
+			start += 1
+			j := copy(r.Waiter.Stack0[:], b.stk()[start:start+wp.nstkWaiter])
+			for ; j < len(r.Waiter.Stack0); j++ {
+				r.Waiter.Stack0[j] = 0
+			}
+			start += wp.nstkWaiter
+			r.Waiter.Creator = b.stk()[start]
 			p = p[1:]
 		}
 	}

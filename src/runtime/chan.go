@@ -173,9 +173,12 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 		return false
 	}
 
-	var t0 int64
+	var t0, blocktime int64
 	if blockprofilerate > 0 {
 		t0 = cputicks()
+	}
+	if wakeupprofilerate > 0 {
+		blocktime = cputicks()
 	}
 
 	lock(&c.lock)
@@ -220,6 +223,10 @@ func chansend(c *hchan, ep unsafe.Pointer, block bool, callerpc uintptr) bool {
 	mysg.releasetime = 0
 	if t0 != 0 {
 		mysg.releasetime = -1
+	}
+	mysg.blocktime = 0
+	if blocktime != 0 {
+		mysg.blocktime = blocktime
 	}
 	// No stack splits between assigning elem and enqueuing mysg
 	// on gp.waiting where copystack can find it.
@@ -289,7 +296,7 @@ func send(c *hchan, sg *sudog, ep unsafe.Pointer, unlockf func(), skip int) {
 	if sg.releasetime != 0 {
 		sg.releasetime = cputicks()
 	}
-	wakeupevent(sg.releasetime-sg.acquiretime, gp, 3)
+	wakeupevent(sg.blocktime, gp, 2)
 	goready(gp, skip+1)
 }
 
@@ -364,7 +371,7 @@ func closechan(c *hchan) {
 		}
 		gp.schedlink.set(glist)
 		glist = gp
-		wakeupevent(sg.releasetime-sg.acquiretime, gp, 3)
+		wakeupevent(sg.blocktime, gp, 2)
 	}
 
 	// release all writers (they will panic)
@@ -384,7 +391,7 @@ func closechan(c *hchan) {
 		}
 		gp.schedlink.set(glist)
 		glist = gp
-		wakeupevent(sg.releasetime-sg.acquiretime, gp, 3)
+		wakeupevent(sg.blocktime, gp, 2)
 	}
 	unlock(&c.lock)
 
@@ -453,6 +460,10 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 	if blockprofilerate > 0 {
 		t0 = cputicks()
 	}
+	var blocktime int64
+	if wakeupprofilerate > 0 {
+		blocktime = cputicks()
+	}
 
 	lock(&c.lock)
 
@@ -507,6 +518,10 @@ func chanrecv(c *hchan, ep unsafe.Pointer, block bool) (selected, received bool)
 	mysg.releasetime = 0
 	if t0 != 0 {
 		mysg.releasetime = -1
+	}
+	mysg.blocktime = 0
+	if blocktime != 0 {
+		mysg.blocktime = blocktime
 	}
 	// No stack splits between assigning elem and enqueuing mysg
 	// on gp.waiting where copystack can find it.
@@ -588,7 +603,7 @@ func recv(c *hchan, sg *sudog, ep unsafe.Pointer, unlockf func(), skip int) {
 	if sg.releasetime != 0 {
 		sg.releasetime = cputicks()
 	}
-	wakeupevent(sg.releasetime-sg.acquiretime, gp, 3)
+	wakeupevent(sg.blocktime, gp, 2)
 	goready(gp, skip+1)
 }
 
