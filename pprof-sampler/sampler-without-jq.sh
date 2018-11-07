@@ -3,13 +3,6 @@ set -e -o pipefail
 
 : ${SAMPLING_RATE:?Specify the sampling rate as SAMPLING_RATE}
 
-config=/config.json
-
-if [[ ! -f $config ]]; then
-	echo "Config file $config does not exist"
-	exit 1
-fi
-
 addresses=("localhost:6060")
 suffixes=("pprof","wakeup","block")
 
