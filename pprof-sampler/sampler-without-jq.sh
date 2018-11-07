@@ -8,22 +8,23 @@ suffixes=("pprof" "wakeup" "block")
 
 declare -A paths
 
-path["pprof"]="/debug/pprof/goroutine?debug=2"
-path["wakeup"]="/debug/pprof/wakeup?debug=2&rate=1000"
-path["block"]="/debug/pprof/block?debug=1"
+paths["pprof"]="/debug/pprof/goroutine?debug=2"
+paths["wakeup"]="/debug/pprof/wakeup?debug=2&rate=1000"
+paths["block"]="/debug/pprof/block?debug=1"
 
 while true; do
-	sleep $SAMPLING_RATE
-	date_time=$(date +"%Y%m%d-%H%M%S")
-	(
-		mkdir -p $date_time
-		cd $date_time
-		for address in $addresses; do
-			node=${address%:*}
-			for suffix in $suffixes; do
-				path=${paths[$suffix]}
-				curl -s "http://${address}${path}" > $address.$suffix &
-			done
-		done
-	) &
+        sleep $SAMPLING_RATE
+        date_time=$(date +"%Y%m%d-%H%M%S")
+        (
+                mkdir -p $date_time
+                cd $date_time
+                for address in ${addresses[@]}; do
+                        node=${address%:*}
+                        for suffix in ${suffixes[@]}; do
+                                path=${paths[$suffix]}
+                                curl -s "http://${address}${path}" > $address.$suffix &
+                        done
+                done
+        ) &
 done
+
