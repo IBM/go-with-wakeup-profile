@@ -4,7 +4,7 @@ set -e -o pipefail
 : ${SAMPLING_RATE:?Specify the sampling rate as SAMPLING_RATE}
 
 addresses=("localhost:6060")
-suffixes=("pprof","wakeup","block")
+suffixes=("pprof" "wakeup" "block")
 
 declare -A paths
 
