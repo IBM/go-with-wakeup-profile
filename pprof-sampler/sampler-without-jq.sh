@@ -10,14 +10,14 @@ if [[ ! -f $config ]]; then
 	exit 1
 fi
 
-addresses="$(jq -r '.addresses[]' $config)"
-suffixes="$(jq -r '.paths|keys[]' $config)"
+addresses=("localhost:6060")
+suffixes=("pprof","wakeup","block")
 
 declare -A paths
 
-for suffix in $suffixes; do
-	paths[$suffix]=$(jq -r ".paths[\"$suffix\"]" $config)
-done
+path["pprof"]="/debug/pprof/goroutine?debug=2"
+path["wakeup"]="/debug/pprof/wakeup?debug=2&rate=1000"
+path["block"]="/debug/pprof/block?debug=1"
 
 while true; do
 	sleep $SAMPLING_RATE
