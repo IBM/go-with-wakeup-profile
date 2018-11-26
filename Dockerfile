@@ -1,10 +1,9 @@
 FROM		ubuntu
 RUN		apt-get update	\
 		&& apt-get install -y curl gcc
-ENV		GO_VERSION	1.10.2
+ENV		GO_VERSION	1.10.4
 WORKDIR		/opt
-RUN		MACH=$(uname -m)	\
-		&& if [ "$MACH" = "x86_64" ]; then ARCH=amd64; else ARCH=$MACH; fi	\
+RUN		ARCH=$(uname -m | sed -e 's/x86_64/amd64/g')	\
 		&& curl -s https://dl.google.com/go/go$GO_VERSION.linux-$ARCH.tar.gz | tar xz	\
 		&& mv go go-bootstrap
 ENV		GOROOT_BOOTSTRAP	/opt/go-bootstrap
