@@ -1,44 +1,29 @@
-# The Go Programming Language
+# go-with-wakeup-profile
 
-Go is an open source programming language that makes it easy to build simple,
-reliable, and efficient software.
+A fork of [the Go programming language](https://github.com/golang/go). This repository adds a new feature to generate additional performance profiling data.
 
-![Gopher image](doc/gopher/fiveyears.jpg)
-*Gopher image by [Renee French][rf], licensed under [Creative Commons 3.0 Attributions license][cc3-by].*
+Link to the original [README](README-ORIGINAL.md).
 
-Our canonical Git repository is located at https://go.googlesource.com/go.
-There is a mirror of the repository at https://github.com/golang/go.
 
-Unless otherwise noted, the Go source files are distributed under the
-BSD-style license found in the LICENSE file.
+## How to build
 
-### Download and Install
+1. Build a container to build a golang.
 
-#### Binary Distributions
+   Select a golang version (1.9, 1.10, or 1.11) to build by choosing a branch.
 
-Official binary distributions are available at https://golang.org/dl/.
+```
+$ docker build -t go-wakeup git@github.com:IBM/go-with-wakeup-profile#wakeup-profile.go1.11
+```
 
-After downloading a binary release, visit https://golang.org/doc/install
-or load [doc/install.html](./doc/install.html) in your web browser for installation
-instructions.
+2. Run the container.
+```
+$ docker run --rm go-wakeup > go-wakeup.tar.gz
+```
 
-#### Install From Source
+3. Make sure you get a golang with wakeup profile.
 
-If a binary distribution is not available for your combination of
-operating system and architecture, visit
-https://golang.org/doc/install/source or load [doc/install-source.html](./doc/install-source.html)
-in your web browser for source installation instructions.
-
-### Contributing
-
-Go is the work of thousands of contributors. We appreciate your help!
-
-To contribute, please read the contribution guidelines:
-	https://golang.org/doc/contribute.html
-
-Note that the Go project uses the issue tracker for bug reports and
-proposals only. See https://golang.org/wiki/Questions for a list of
-places to ask questions about the Go language.
-
-[rf]: https://reneefrench.blogspot.com/
-[cc3-by]: https://creativecommons.org/licenses/by/3.0/
+```
+$ tar -zxvf go--wakeup.tar.gz
+$ ./go/bin/go version
+go version go1.11.1-wakeup linux/{$ARCH}
+```

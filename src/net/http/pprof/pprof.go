@@ -242,6 +242,10 @@ func (name handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
 	}
+	rate, _ := strconv.Atoi(r.FormValue("rate"))
+	if name == "wakeup" && rate > 0 {
+		runtime.SetWakeupProfileFraction(rate)
+	}
 	p.WriteTo(w, debug)
 }
 
