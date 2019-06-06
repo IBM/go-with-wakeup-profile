@@ -16,6 +16,7 @@ path to this file based on the path to the runtime package.
 
 
 from __future__ import print_function
+import gdb
 import re
 import sys
 
